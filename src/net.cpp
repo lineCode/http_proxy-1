@@ -23,18 +23,7 @@
 
 
 #include <netdb.h>
-
-
-
-
-
-
-
-
-
-
-
-
+#include <stdio.h>
 
 
 
@@ -127,7 +116,7 @@ int ConnetctionBase::receiveLine(char *text, const int bufLen)
 
 
 
-void Server::build()
+void Server::init()
 {
 
     unsigned int &listenfd = fileDescription;
@@ -160,16 +149,19 @@ void Server::build()
 }
 
 
-Guest* Server::wait()
+void Server::start()
 {
     struct sockaddr_storage clientAddr;
     socklen_t clientlen = sizeof(sockaddr_storage);
     int connfd = accept(fileDescription, (sockaddr*)&clientAddr, &clientlen);
-    Guest* ret = new Guest;
-    ret->setFileDescription(connfd);
-    return ret;
+    server->setFileDescription(connfd);
 }
 
+
+void Server::setConnection(ServerConnection* _server)
+{
+    server = _server;
+}
 
 
 

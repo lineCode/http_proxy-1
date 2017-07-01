@@ -104,23 +104,20 @@ namespace philippica_net
 
 
 
-	class Server: public ConnetctionBase
+	class ServerConnection: public ConnetctionBase
 	{
 	public:
-		Server()
+		ServerConnection()
         {
         };
 
-		~Server()
+		virtual ~ServerConnection()
 		{
+            shutdown();
 		};
 
-		inline void setLocalPort(int _port)
-		{
-			localPort = _port;
-			int2Str(localPort, strLocalPort);
-		}
-		void build();
+		virtual void run(){};
+
 		Guest* wait();
 
 	private:
@@ -130,24 +127,39 @@ namespace philippica_net
 	};
 
 
-	class Guest: public ConnetctionBase
+
+
+	class Server
 	{
 	public:
-		Guest(){};
-		~Guest(){};
+        Server(){};
+		Server(int port)
+		{
+            setLocalPort(port);
+        }
+		Server(ServerConnection* server, int port = 80)
+		{
+            setLocalPort(port);
+        }
+        void setConnection(ServerConnection* server);
+		~Server(){};
+		inline void setLocalPort(int _port)
+		{
+			localPort = _port;
+			int2Str(localPort, strLocalPort);
+		}
+		void start();
+		void init();
+
+    private:
+		int localPort;
+		char strLocalPort[MAX_PORT_LENGTH + 1];
+		ServerConnection* server;
+		unsigned int fileDescription;
 	};
 
 
-
-
 } // End namespace philippica_net
-
-
-
-
-
-
-
 
 
 

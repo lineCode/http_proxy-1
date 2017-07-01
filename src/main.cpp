@@ -46,7 +46,6 @@ void transmit(ConnetctionBase* a, ConnetctionBase* b)
     char request[1024];
     while(readLen = a->receive(request, 1024))
     {
-        //printf("transmit : %d\n", readLen);
         if(readLen < 0)
         {
             break;
@@ -57,19 +56,12 @@ void transmit(ConnetctionBase* a, ConnetctionBase* b)
         }
         b->send(request , readLen);
     }
-    puts("thread back");
 }
 
 
 int getHost(ConnetctionBase* guest, char *request, HttpParser& parser)
 {
     int retLen = guest->receive(request, 10240);
-
-    //printf("%s\n",request);
-    if(retLen >= 10240)
-    {
-        puts("That's full!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    }
     for(int i = 1; i <= retLen; i++)
     {
         parser.getChar(request[i - 1]);
@@ -80,7 +72,6 @@ int getHost(ConnetctionBase* guest, char *request, HttpParser& parser)
 void httpsProcess(ConnetctionBase* guest, ConnetctionBase& pageGetter)
 {
     thread send(transmit, guest, &pageGetter);
-
     thread receive(transmit, &pageGetter, guest);
     send.join();
     receive.join();
@@ -91,208 +82,152 @@ void tranmitPayload(ConnetctionBase* guest, ConnetctionBase& pageGetter)
     int readLen;
     char rsvMsg[1024];
     int payloadLen = -1;
-        readLen = pageGetter.receiveLine(rsvMsg, 1024);
-        puts("sure");
-        if(readLen == 0)
+    readLen = pageGetter.receiveLine(rsvMsg, 1024);
+    if(readLen == 0)
+    {
+        return;
+    }
+    char magic[20];
+    int httpType;
+    sscanf(rsvMsg, "%s %d", magic, &httpType);
+
+    guest -> send(rsvMsg, readLen);
+
+
+    while(readLen = pageGetter.receiveLine(rsvMsg, 1024))
+    {
+
+        char *contentLenPtr = strstr(rsvMsg, "Content-Length");
+        if(contentLenPtr != NULL)
         {
-            return;
+            contentLenPtr += 15;
+            sscanf(contentLenPtr, "%d", &payloadLen);
         }
-
-
-        char magic[20];
-        int httpType;
-        sscanf(rsvMsg, "%s %d", magic, &httpType);
-        printf("%s\n", rsvMsg);
-
         guest -> send(rsvMsg, readLen);
-
-        if(httpType == 302)
+        if(strlen(rsvMsg) == 2)
         {
-                puts("302");
+            break;
         }
+    }
 
-        while(readLen = pageGetter.receiveLine(rsvMsg, 1024))
+    if(httpType == 404 || httpType == 201 || httpType == 204 || httpType == 304)
+    {
+        return;
+    }
+
+    if(payloadLen != -1)
+    {
+        for(int i = 1; i <= payloadLen; i++)
         {
-            //printf("%s", rsvMsg);
-            char *contentLenPtr = strstr(rsvMsg, "Content-Length");
-            if(contentLenPtr != NULL)
-            {
-                contentLenPtr += 15;
-                sscanf(contentLenPtr, "%d", &payloadLen);
-            }
+            readLen = pageGetter.receive(rsvMsg, 1);
             guest -> send(rsvMsg, readLen);
-            if(strlen(rsvMsg) == 2)
+        }
+    }
+    else
+    {
+        do
+        {
+            readLen = pageGetter.receiveLine(rsvMsg, 1024);
+            if(readLen == 0)
             {
                 break;
             }
-        }
-        printf("http type : %d\n",httpType);
+            guest -> send(rsvMsg, readLen);
+            sscanf(rsvMsg, "%x", &payloadLen);
 
-        if(httpType == 404 || httpType == 201 || httpType == 204 || httpType == 304)
-        {
-              //          readLen = pageGetter.receive(rsvMsg, 10240);
-              //  guest -> send(rsvMsg, readLen);
-            puts("not 200");
-            return;
-        }
-
-        if(payloadLen != -1)
-        {
-            for(int i = 1; i <= payloadLen; i++)
+            for(int i = 1; i <= payloadLen + 2; i++)
             {
                 readLen = pageGetter.receive(rsvMsg, 1);
                 guest -> send(rsvMsg, readLen);
             }
-            puts("over");
-        }
-        else
-        {
-            do
-            {
-                readLen = pageGetter.receiveLine(rsvMsg, 1024);
-                if(readLen == 0)
-                {
-                    break;
-                }
-                guest -> send(rsvMsg, readLen);
-                sscanf(rsvMsg, "%x", &payloadLen);
 
-                for(int i = 1; i <= payloadLen + 2; i++)
-                {
-                    readLen = pageGetter.receive(rsvMsg, 1);
-                    guest -> send(rsvMsg, readLen);
-                }
-
-            }while(payloadLen != 0);
-            puts("done");
-        }
+        }while(payloadLen != 0);
+    }
 }
 
 
-void taskEntry(ConnetctionBase* guest)
+void taskEntry(ServerConnection* guest)
 {
     int requestLen;
     int readLen;
-    int payloadLen = -1;
+    int payloadLen;
     char request[10240];
     char rsvMsg[1024];
-    ClientConnection pageGetter;
     bool first = false;
-    int cnt=0;
     char domainName[MAX_URL_LEN];
-    for(;;cnt++)
+    ClientConnection pageGetter;
+    for(;;)
     {
         HttpParser parser;
-        puts("1");
         payloadLen = -1;
         readLen = 0;
-        //if(first == false)
+
+        readLen = getHost(guest, request, parser);
+        domainName[0] = 0;
+        parser.getDomain(domainName);
+
+
+        if(domainName[0] == 0 && readLen > 0)
         {
-            puts("<><><>>><><><><<>get host");
-            readLen = getHost(guest, request, parser);
-            puts("readLen");
-            domainName[0] = 0;
-            parser.getDomain(domainName);
-            printf("domain name : %s \n", domainName);
-            char *contentLenPtr = strstr(domainName, "comer");
-            if(contentLenPtr != NULL)
-            {
-                puts("123");
-            }
+            continue;
+        }
+        if(readLen <= 0)
+        {
+            delete guest;
+            return;
+        }
 
-            if(domainName[0] == 0 && readLen > 0)
+        pageGetter.connectByDomainName(domainName, parser.port);
+        if(parser.port == 80)pageGetter.send(request, readLen);
+
+
+
+        if(parser.port != 80)
+        {
+            if(first == false)
             {
-                puts("what the fuck");
+                first = true;
+
+                char *ch = "HTTP/1.1 200 Connection established\r\n\r\n";
+                readLen = strlen(ch);
+                guest -> send(ch , readLen);
+
+                httpsProcess(guest, pageGetter);
                 continue;
-            }
-            if(readLen <= 0)
-            {
-                puts("delete guest 209");
-                printf("id = %d\n",guest->id);
-                delete guest;
-                return;
-            }
-            puts("first");
-            if(domainName[0] == 'p')
-            {
-                puts("passport");
-            }
-            pageGetter.connectByDomainName(domainName, parser.port);
-            if(parser.port == 80)pageGetter.send(request, readLen);
-            //printf("request : %s", request);
-
-
-
-            // CONNECT PACKAGE
-            if(parser.port != 80)
-            {
-                if(first == false)
-                {
-                    first = true;
-                    puts("domain");
-                    char *ch = "HTTP/1.1 200 Connection established\r\n\r\n";
-                    readLen = strlen(ch);
-                    guest -> send(ch , readLen);
-
-                    httpsProcess(guest, pageGetter);
-                puts("delete guest 237");
-                printf("id = %d\n",guest->id);
-                    delete guest;
-                    continue;
-                }
-                else
-                {
-                    puts("33");
-                    httpsProcess(guest, pageGetter);
-                puts("delete guest 237");
-                printf("id = %d\n",guest->id);
-                    delete guest;
-                    return;
-                }
             }
             else
             {
-                tranmitPayload(guest, pageGetter);
+
+                httpsProcess(guest, pageGetter);
+                delete guest;
+                return;
             }
-            pageGetter.shutdown();
-            continue;
         }
-        printf("hahaha : \n%d %s\n",readLen, request);
-
-        //readLen = pageGetter.receive(request, 10240);
-        printf("<><>>><><<<><>>cnt == %d\n", cnt);
-        printf("domain : %s\n" , domainName);
-
-        if(domainName[0] == 'k' && cnt == 1)
+        else
         {
-            puts("kb");
+            tranmitPayload(guest, pageGetter);
         }
-
+        pageGetter.shutdown();
+        continue;
+        printf("domain : %s\n" , domainName);
         readLen = guest->receive(request, 10240);
-        printf("no not me\n", cnt);
         readLen = pageGetter.send(request, readLen);
-        // Get state
-        puts("suspect");
-
         tranmitPayload(guest, pageGetter);
 
     }
-
-
 }
 
 int main()
 {
-    Server server;
-    server.setLocalPort(local_port);
-    server.build();
+    Server server(local_port);
+    server.init();
     signal(SIGPIPE, SIG_IGN);
-    int id = 0;
-    for(;;id++)
+    for(;;)
     {
-        ConnetctionBase* guest = server.wait();
-        guest->id = id;
-        thread task(taskEntry, guest);
+        ServerConnection *a = new ServerConnection;
+        server.setConnection(a);
+        server.start();
+        thread task(taskEntry, a);
         //task.join();
         task.detach();
     }

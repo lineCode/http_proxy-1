@@ -155,10 +155,6 @@ void HttpParser::getChar(char c)
             url[urlLen++] = c;
             url[urlLen] = '\0';
         }
-        if(url[urlLen-2]=='m' && url[urlLen-3]=='o' && url[urlLen-4]=='c' && url[urlLen-5]=='.' )
-        {
-            puts("stop");
-        }
     }
     else if(status == STATUS_HOST_URL_PORT)
     {
